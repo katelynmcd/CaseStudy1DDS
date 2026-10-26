@@ -1,0 +1,904 @@
+---
+title: "Project 1"
+output: html_document
+date: "2026-10-14"
+---
+
+Employee attrition is an important concern for organizations because losing employees can lead to increased recruitment and training expenses, reduced productivity, and the loss of experienced team members. Understanding which employee characteristics are associated with attrition can help organizations make more informed decisions about employee retention.
+
+The purpose of this case study is to analyze employee data to identify patterns associated with attrition and evaluate whether machine learning models can predict which employees are likely to leave. Using a dataset containing 870 employees, the analysis explores relationships between attrition and factors such as job role, job satisfaction, overtime, monthly income, and years of experience.
+
+The study begins with exploratory data analysis to examine differences between employees who stayed and those who left. Next, two classification models, K-Nearest Neighbors (KNN) and Naive Bayes, are developed and evaluated using accuracy, sensitivity, and specificity. Finally, a cost analysis estimates the potential financial impact of using these models to guide retention efforts. The overall goal is to determine whether predictive modeling can provide useful insights for developing more targeted and cost-effective employee retention strategies.
+
+```{r}
+library(tidyverse)
+library(e1071)
+library(class)
+library(caret)
+library(ggplot2)
+library(ggthemes)
+library(dplyr)
+library(scales)
+```
+
+```{r}
+set.seed(13)
+data = read.csv("/Users/katelyn/Desktop/Doing Data Science/Project 1/CaseStudy1-data.csv")
+
+#dim(data) 
+# str(data)
+# colSums(is.na(data))
+# sum(duplicated(data$ID))
+# table(data$Attrition) # No 730 Yes 140
+# prop.table(table(data$Attrition)) * 100   # 16% with attrition
+# typeof(data$Attrition
+
+data$Attrition = factor(data$Attrition, levels = c("No", "Yes"))
+
+```
+
+```{r}
+# slide 2 :attrition rate 16%
+
+attrition_summary = data %>%
+  count(Attrition) %>%
+  mutate(Percentage = n / sum(n), Label = paste0(n, " (", percent(Percentage, accuracy = 0.1),
+  ")"))
+
+attrition_summary
+
+ggplot(attrition_summary, aes(x = Attrition, y = n, fill = Attrition)) +
+  geom_col(width = 0.6) +
+  geom_text(aes(label = Label), vjust = -0.4, size = 5) +
+  scale_fill_manual(values = c("No" = "gray", "Yes" = "#daaa96")) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.15))) +
+  labs(
+    title = "Employee Attrition in the Dataset",
+    x = "Attrition",
+    y = "Number of Employees"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+
+## colored version 
+ggplot(attrition_summary, aes(x = Attrition, y = n, fill = Attrition)) +
+  geom_col(width = 0.6) +
+  geom_text(aes(label = Label), vjust = -0.4, size = 5, color = "#33302D") +
+  scale_fill_manual(values = c("No" = "gray", "Yes" = "#daaa96")) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.15))) +
+  labs(
+    x = "Attrition",
+    y = "Number of Employees"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "none",
+    plot.background = element_rect(fill = "#e4e1db", color = NA),
+    panel.background = element_rect(fill = "#e4e1db", color = NA),
+    axis.text = element_text(color = "#33302D"),
+    axis.title = element_text(color = "#33302D")
+  )
+
+```
+
+```{r}
+# slide 3 : attrition by department 
+
+dept_summary = data %>%
+  group_by(Department) %>%
+  summarise(
+    Employees = n(),
+    AttritionRate = mean(Attrition == "Yes"),
+    .groups = "drop")
+
+ggplot(dept_summary,
+       aes(x = reorder(Department, AttritionRate),
+           y = AttritionRate, fill = Department)) +
+  geom_col(show.legend = FALSE, width = 0.7) +
+  geom_text(aes(label = percent(AttritionRate, accuracy = 0.1)),
+            hjust = -0.15) +
+  coord_flip() +
+  scale_fill_brewer(palette = "Set2") +
+  scale_y_continuous(labels = percent,
+                     limits = c(0, 1),
+                     expand = expansion(mult = c(0, 0.08))) +
+  labs(title = "Attrition Rate by Department",
+       x = NULL, y = "Employees who left") +
+  theme_minimal(base_size = 12)
+
+## colored version
+dept_summary = data %>%
+  group_by(Department) %>%
+  summarise(
+    Employees = n(),
+    AttritionRate = mean(Attrition == "Yes"),
+    .groups = "drop")
+
+ggplot(dept_summary,
+       aes(x = reorder(Department, AttritionRate),
+           y = AttritionRate, fill = Department)) +
+  geom_col(show.legend = FALSE, width = 0.7) +
+  geom_text(aes(label = percent(AttritionRate, accuracy = 0.1)),
+            hjust = -0.15, color = "#33302D") +
+  coord_flip() +
+  scale_fill_manual(values = c(
+    "Human Resources" = "#8A9A83",
+    "Research & Development" = "#8296A5",
+    "Sales" = "#B58C72"
+  )) +
+  scale_y_continuous(labels = percent,
+                     limits = c(0, 1),
+                     expand = expansion(mult = c(0, 0.08))) +
+  labs(title = "Attrition Rate by Department",
+       x = NULL, y = "Employees who left") +
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.background = element_rect(fill = "#e4e1db", color = NA),
+    panel.background = element_rect(fill = "#e4e1db", color = NA),
+    panel.grid.major = element_line(color = "#cec9c0"),
+    panel.grid.minor = element_blank(),
+    plot.title = element_text(color = "#33302D", face = "bold"),
+    axis.text = element_text(color = "#33302D"),
+    axis.title = element_text(color = "#33302D")
+  )
+
+```
+
+```{r}
+# slide 4 : attrition by job role 
+
+role_summary = data %>%
+  group_by(JobRole) %>%
+  summarise(
+    Employees = n(),
+    AttritionRate = mean(Attrition == "Yes"),
+    .groups = "drop")
+
+ggplot(role_summary,
+       aes(x = reorder(JobRole, AttritionRate),
+           y = AttritionRate, fill = AttritionRate)) +
+  geom_col(width = 0.7) +
+  geom_text(aes(label = percent(AttritionRate, accuracy = 0.1)),
+            hjust = -0.15) +
+  coord_flip() +
+  scale_fill_gradient(low = "#9ECAE1", high = "#CB181D",
+                      labels = percent) +
+  scale_y_continuous(labels = percent,
+                     limits = c(0, 1),
+                     expand = expansion(mult = c(0, 0.08))) +
+  labs(title = "Attrition Rate by Job Role",
+       x = NULL, y = "Employees who left",
+       fill = "Attrition rate") +
+  theme_minimal(base_size = 12)
+
+## colored version
+
+role_summary = data %>%
+  group_by(JobRole) %>%
+  summarise(
+    Employees = n(),
+    AttritionRate = mean(Attrition == "Yes"),
+    .groups = "drop")
+
+ggplot(role_summary,
+       aes(x = reorder(JobRole, AttritionRate),
+           y = AttritionRate, fill = AttritionRate)) +
+  geom_col(width = 0.7) +
+  geom_text(aes(label = percent(AttritionRate, accuracy = 0.1)),
+            hjust = -0.15, color = "#33302D") +
+  coord_flip() +
+  scale_fill_gradient(
+    low = "#8A9A83",
+    high = "#daaa96",
+    labels = percent
+  ) +
+  scale_y_continuous(
+    labels = percent,
+    limits = c(0, 1),
+    expand = expansion(mult = c(0, 0.08))
+  ) +
+  labs(
+    title = "Attrition Rate by Job Role",
+    x = NULL,
+    y = "Employees who left",
+    fill = "Attrition rate"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.background = element_rect(fill = "#e4e1db", color = NA),
+    panel.background = element_rect(fill = "#e4e1db", color = NA),
+    panel.grid.major = element_line(color = "#cec9c0"),
+    panel.grid.minor = element_blank(),
+    plot.title = element_text(color = "#33302D", face = "bold"),
+    axis.text = element_text(color = "#33302D"),
+    axis.title = element_text(color = "#33302D"),
+    legend.background = element_rect(fill = "#e4e1db", color = NA),
+    legend.key = element_rect(fill = "#e4e1db", color = NA)
+  )
+```
+
+```{r}
+# slide 5 and 6 : attrition for satisfaction variables
+
+satisfaction_vars = c(
+  "JobSatisfaction",
+  "EnvironmentSatisfaction",
+  "JobInvolvement",
+  "RelationshipSatisfaction",
+  "WorkLifeBalance")
+
+satisfaction_data = data %>%
+  select(Attrition, all_of(satisfaction_vars)) %>%
+  pivot_longer(
+    cols = all_of(satisfaction_vars),
+    names_to = "Measure",
+    values_to = "Rating"
+  ) %>%
+  group_by(Measure, Rating) %>%
+  summarise(
+    Employees = n(),
+    AttritionRate = mean(Attrition == "Yes"),
+    .groups = "drop"
+  )
+
+ggplot(satisfaction_data,
+       aes(x = factor(Rating), y = AttritionRate, fill = Measure)) +
+  geom_col(show.legend = FALSE) +
+  geom_text(aes(label = percent(AttritionRate, accuracy = 1)),
+            vjust = -0.25, size = 3) +
+  facet_wrap(~ Measure, ncol = 3) +
+  scale_fill_brewer(palette = "Set2") +
+  scale_y_continuous(labels = percent,
+                     limits = c(0, 1),
+                     expand = expansion(mult = c(0, 0.12))) +
+  labs(title = "Attrition Across Satisfaction and Work Environment Ratings",
+       x = "Rating (1 = lowest, 4 = highest)",
+       y = "Employees who left") +
+  theme_minimal(base_size = 11)
+
+## colored version 
+satisfaction_vars = c(
+  "JobSatisfaction",
+  "EnvironmentSatisfaction",
+  "JobInvolvement",
+  "RelationshipSatisfaction",
+  "WorkLifeBalance")
+
+satisfaction_data = data %>%
+  select(Attrition, all_of(satisfaction_vars)) %>%
+  pivot_longer(
+    cols = all_of(satisfaction_vars),
+    names_to = "Measure",
+    values_to = "Rating"
+  ) %>%
+  group_by(Measure, Rating) %>%
+  summarise(
+    Employees = n(),
+    AttritionRate = mean(Attrition == "Yes"),
+    .groups = "drop"
+  )
+
+ggplot(satisfaction_data,
+       aes(x = factor(Rating), y = AttritionRate)) +
+  geom_col(fill = "#daaa96", width = 0.7) +
+  geom_text(aes(label = percent(AttritionRate, accuracy = 1)),
+            vjust = -0.25, size = 3, color = "#33302D") +
+  facet_wrap(~ Measure, ncol = 3) +
+  scale_y_continuous(
+    labels = percent,
+    limits = c(0, 1),
+    expand = expansion(mult = c(0, 0.12))
+  ) +
+  labs(
+    title = "Attrition Across Satisfaction and Work Environment Ratings",
+    x = "Rating (1 = lowest, 4 = highest)",
+    y = "Employees who left"
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(
+    plot.background = element_rect(fill = "#e4e1db", color = NA),
+    panel.background = element_rect(fill = "#e4e1db", color = NA),
+    panel.grid.major = element_line(color = "#cec9c0"),
+    panel.grid.minor = element_blank(),
+    plot.title = element_text(color = "#33302D", face = "bold"),
+    axis.text = element_text(color = "#33302D"),
+    axis.title = element_text(color = "#33302D"),
+    strip.background = element_rect(fill = "#d4cec4", color = NA),
+    strip.text = element_text(color = "#33302D", face = "bold")
+  )
+
+
+environment_data = data %>%
+  group_by(EnvironmentSatisfaction) %>%
+  summarise(
+    Employees = n(),
+    AttritionRate = mean(Attrition == "Yes"),
+    .groups = "drop"
+  )
+
+ggplot(environment_data,
+       aes(x = factor(EnvironmentSatisfaction), y = AttritionRate)) +
+  geom_col(fill = "#daaa96", width = 0.7) +
+  geom_text(aes(label = percent(AttritionRate, accuracy = 1)),
+            vjust = -0.25, size = 4, color = "#33302D") +
+  scale_y_continuous(
+    labels = percent,
+    limits = c(0, 0.35),
+    expand = expansion(mult = c(0, 0.12))
+  ) +
+  labs(
+    title = "Attrition by Environment Satisfaction",
+    x = "Environment Satisfaction (1 = lowest, 4 = highest)",
+    y = "Employees who left"
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(
+    plot.background = element_rect(fill = "#e4e1db", color = NA),
+    panel.background = element_rect(fill = "#e4e1db", color = NA),
+    panel.grid.major = element_line(color = "#cec9c0"),
+    panel.grid.minor = element_blank(),
+    plot.title = element_text(color = "#33302D", face = "bold"),
+    axis.text = element_text(color = "#33302D"),
+    axis.title = element_text(color = "#33302D")
+  )
+
+```
+
+```{r}
+# slide 7 : monthly income 
+
+ggplot(data, aes(x = MonthlyIncome, fill = Attrition)) +
+  geom_density(alpha = 0.45, na.rm = TRUE) +
+  scale_fill_manual(values = c("No" = "#4C78A8", "Yes" = "#E45756")) +
+  scale_x_continuous(labels = label_dollar()) +
+  labs(title = "Monthly Income Distribution by Attrition",
+       x = "Monthly income", y = "Density", fill = "Attrition") +
+  theme_minimal(base_size = 12)
+
+## colored version 
+
+ggplot(data, aes(x = MonthlyIncome, fill = Attrition)) +
+  geom_density(alpha = 0.45, na.rm = TRUE) +
+  scale_fill_manual(values = c(
+    "No" = "#8A9A83",
+    "Yes" = "#daaa96"
+  )) +
+  scale_x_continuous(labels = label_dollar()) +
+  labs(
+    title = "Monthly Income Distribution by Attrition",
+    x = "Monthly income",
+    y = "Density",
+    fill = "Attrition"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.background = element_rect(fill = "#e4e1db", color = NA),
+    panel.background = element_rect(fill = "#e4e1db", color = NA),
+    panel.grid.major = element_line(color = "#cec9c0"),
+    panel.grid.minor = element_blank(),
+    plot.title = element_text(color = "#33302D", face = "bold"),
+    axis.text = element_text(color = "#33302D"),
+    axis.title = element_text(color = "#33302D"),
+    legend.background = element_rect(fill = "#e4e1db", color = NA),
+    legend.key = element_rect(fill = "#e4e1db", color = NA),
+    legend.text = element_text(color = "#33302D"),
+    legend.title = element_text(color = "#33302D")
+  )
+
+
+# t test
+income_test = t.test(MonthlyIncome ~ Attrition,data = data)
+income_test
+```
+
+```{r}
+# slide 8 and 9 : tenure and promotion 
+tenure_data = data %>%
+  select(Attrition, YearsAtCompany, YearsInCurrentRole,
+         YearsSinceLastPromotion, YearsWithCurrManager) %>%
+  pivot_longer(
+    cols = -Attrition,
+    names_to = "Measure",
+    values_to = "Years"
+  )
+
+ggplot(tenure_data, aes(x = Attrition, y = Years, fill = Attrition)) +
+  geom_boxplot(alpha = 0.8, outlier.alpha = 0.3) +
+  facet_wrap(~ Measure, scales = "free_y", ncol = 2) +
+  scale_fill_manual(values = c("No" = "#4C78A8", "Yes" = "#E45756")) +
+  labs(title = "Tenure and Career Progression by Attrition",
+       x = "Attrition", y = "Years", fill = "Attrition") +
+  theme_minimal(base_size = 11) +
+  theme(legend.position = "none")
+
+
+## colored version
+tenure_data = data %>%
+  select(Attrition, YearsAtCompany,YearsInCurrentRole, 
+         YearsSinceLastPromotion, YearsWithCurrManager) %>%
+  pivot_longer(
+    cols = -Attrition,
+    names_to = "Measure",
+    values_to = "Years"
+  )
+
+ggplot(tenure_data, aes(x = Attrition, y = Years, fill = Attrition)) +
+  geom_boxplot(alpha = 0.8, outlier.alpha = 0.3) +
+  facet_wrap(~ Measure, scales = "free_y", ncol = 2) +
+  scale_fill_manual(values = c(
+    "No" = "#8A9A83",
+    "Yes" = "#daaa96"
+  )) +
+  labs(
+    title = "Tenure and Career Progression by Attrition",
+    x = "Attrition",
+    y = "Years",
+    fill = "Attrition"
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(
+    legend.position = "none",
+    plot.background = element_rect(fill = "#e4e1db", color = NA),
+    panel.background = element_rect(fill = "#e4e1db", color = NA),
+    panel.grid.major = element_line(color = "#cec9c0"),
+    panel.grid.minor = element_blank(),
+    plot.title = element_text(color = "#33302D", face = "bold"),
+    axis.text = element_text(color = "#33302D"),
+    axis.title = element_text(color = "#33302D"),
+    strip.background = element_rect(fill = "#d4cec4", color = NA),
+    strip.text = element_text(color = "#33302D", face = "bold")
+  )
+
+company_years = data %>% select(Attrition, YearsAtCompany)
+
+ggplot(company_years, aes(x = Attrition, y = YearsAtCompany, fill = Attrition)) +
+  geom_boxplot(alpha = 0.8, outlier.alpha = 0.3) +
+  scale_fill_manual(values = c(
+    "No" = "#8A9A83",
+    "Yes" = "#daaa96"
+  )) +
+  labs(
+    title = "Years at Company by Attrition",
+    x = "Attrition",
+    y = "Years at Company",
+    fill = "Attrition"
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(
+    legend.position = "none",
+    plot.background = element_rect(fill = "#e4e1db", color = NA),
+    panel.background = element_rect(fill = "#e4e1db", color = NA),
+    panel.grid.major = element_line(color = "#cec9c0"),
+    panel.grid.minor = element_blank(),
+    plot.title = element_text(color = "#33302D", face = "bold"),
+    axis.text = element_text(color = "#33302D"),
+    axis.title = element_text(color = "#33302D")
+  )
+
+```
+
+```{r}
+# slide 10 : monthly income and job level 
+ggplot(data, aes(x = factor(JobLevel), y = MonthlyIncome, fill = Attrition)) +
+  geom_boxplot(position = position_dodge(width = 0.8),
+               outlier.alpha = 0.25) +
+  scale_fill_manual(values = c("No" = "#4C78A8", "Yes" = "#E45756")) +
+  scale_y_continuous(labels = label_dollar()) +
+  labs(title = "Monthly Income by Job Level and Attrition",
+       x = "Job level", y = "Monthly income", fill = "Attrition") +
+  theme_minimal(base_size = 12)
+
+## colored version
+
+sample_sizes = data %>%
+  group_by(JobLevel, Attrition) %>%
+  summarise(
+    n = n(),
+    max_income = max(MonthlyIncome, na.rm = TRUE),
+    .groups = "drop") %>%
+  mutate(
+    label = paste0("n = ", n),
+    label_y = max_income + 500)
+
+ggplot(data, aes(x = factor(JobLevel), y = MonthlyIncome, fill = Attrition)) +
+  geom_boxplot(
+    position = position_dodge(width = 0.8),
+    outlier.alpha = 0.25
+  ) +
+  geom_text(
+    data = sample_sizes,
+    aes(
+      x = factor(JobLevel),
+      y = label_y,
+      label = label,
+      group = Attrition
+    ),
+    position = position_dodge(width = 0.8),
+    size = 3,
+    color = "#33302D",
+    inherit.aes = FALSE
+  ) +
+  scale_fill_manual(values = c(
+    "No" = "#8A9A83",
+    "Yes" = "#daaa96"
+  )) +
+  scale_y_continuous(
+    labels = label_dollar(),
+    expand = expansion(mult = c(0.05, 0.12))
+  ) +
+  labs(
+    title = "Monthly Income by Job Level and Attrition",
+    x = "Job level",
+    y = "Monthly income",
+    fill = "Attrition"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.background = element_rect(fill = "#e4e1db", color = NA),
+    panel.background = element_rect(fill = "#e4e1db", color = NA),
+    panel.grid.major = element_line(color = "#cec9c0"),
+    panel.grid.minor = element_blank(),
+    plot.title = element_text(color = "#33302D", face = "bold"),
+    axis.text = element_text(color = "#33302D"),
+    axis.title = element_text(color = "#33302D"),
+    legend.background = element_rect(fill = "#e4e1db", color = NA),
+    legend.key = element_rect(fill = "#e4e1db", color = NA),
+    legend.text = element_text(color = "#33302D"),
+    legend.title = element_text(color = "#33302D")
+  )
+
+```
+
+```{r}
+# slide 11 : travel and overtime
+
+workload_vars = c("OverTime", "BusinessTravel")
+
+workload_data = data %>%
+  select(Attrition, all_of(workload_vars)) %>%
+  pivot_longer(
+    cols = all_of(workload_vars),
+    names_to = "Measure",
+    values_to = "Category") %>%
+  group_by(Measure, Category) %>%
+  summarise(
+    Employees = n(),
+    AttritionRate = mean(Attrition == "Yes"),
+    .groups = "drop")
+
+ggplot(workload_data,
+       aes(x = Category, y = AttritionRate, fill = Category)) +
+  geom_col(show.legend = FALSE) +
+  geom_text(aes(label = percent(AttritionRate, accuracy = 0.1)),
+            vjust = -0.3) +
+  facet_wrap(~ Measure, scales = "free_x") +
+  scale_fill_brewer(palette = "Set2") +
+  scale_y_continuous(labels = percent,
+                     limits = c(0, 1),
+                     expand = expansion(mult = c(0, 0.12))) +
+  labs(title = "Attrition by Overtime and Business Travel",
+       x = NULL, y = "Employees who left") +
+  theme_minimal(base_size = 12)
+
+## colored version 
+
+workload_vars = c("OverTime", "BusinessTravel")
+
+workload_data = data %>% 
+  select(Attrition, all_of(workload_vars)) %>%
+  pivot_longer(
+    cols = all_of(workload_vars),
+    names_to = "Measure",
+    values_to = "Category") %>%
+  group_by(Measure, Category) %>%
+  summarise(
+    Employees = n(),
+    AttritionRate = mean(Attrition == "Yes"),
+    .groups = "drop")
+
+workload_data = workload_data %>%
+  mutate(
+    Category = factor(
+      Category,
+      levels = c(
+        "Non-Travel", "Travel_Rarely", "Travel_Frequently",
+        "No", "Yes")))
+
+ggplot(workload_data,
+       aes(x = Category, y = AttritionRate)) +
+  geom_col(fill = "#8A9A83", width = 0.7) +
+  geom_text(
+    aes(label = percent(AttritionRate, accuracy = 0.1)),
+    vjust = -0.3,
+    color = "#33302D"
+  ) +
+  facet_wrap(~ Measure, scales = "free_x") +
+  scale_y_continuous(
+    labels = percent,
+    limits = c(0, 1),
+    expand = expansion(mult = c(0, 0.12))
+  ) +
+  labs(
+    title = "Attrition by Overtime and Business Travel",
+    x = NULL,
+    y = "Employees who left"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.background = element_rect(fill = "#e4e1db", color = NA),
+    panel.background = element_rect(fill = "#e4e1db", color = NA),
+    panel.grid.major = element_line(color = "#cec9c0"),
+    panel.grid.minor = element_blank(),
+    plot.title = element_text(color = "#33302D", face = "bold"),
+    axis.text = element_text(color = "#33302D"),
+    axis.title = element_text(color = "#33302D"),
+    strip.background = element_rect(fill = "#d4cec4", color = NA),
+    strip.text = element_text(color = "#33302D", face = "bold")
+  )
+```
+
+```{r}
+
+model_data = subset(data, select = -c(ID, EmployeeNumber, EmployeeCount, Over18, 
+                                      StandardHours, JobLevel, YearsSinceLastPromotion))
+
+model_data$Attrition = factor(model_data$Attrition, levels = c("No", "Yes"))
+
+categorical_vars = c(
+  "BusinessTravel", "Department", "Education",
+  "EducationField", "EnvironmentSatisfaction",
+  "Gender", "JobInvolvement", "JobLevel",
+  "JobRole", "JobSatisfaction", "MaritalStatus",
+  "OverTime", "PerformanceRating",
+  "RelationshipSatisfaction", "StockOptionLevel",
+  "WorkLifeBalance"
+)
+
+categorical_vars = intersect(categorical_vars, names(model_data))
+
+for (v in categorical_vars) {
+  model_data[[v]] = factor(model_data[[v]])}
+
+set.seed(13)
+
+train_indices = sample(seq_len(nrow(model_data)), round(0.8 * nrow(model_data)))
+train_data = model_data[train_indices, ]
+test_data = model_data[-train_indices, ]
+
+```
+
+```{r}
+# find optimal k for knn
+library(class)
+library(caret)
+
+set.seed(13)
+
+iterations = 500
+numks = 90
+splitPerc = .80
+
+masterAcc = matrix(nrow = iterations, ncol = numks)
+masterSens = matrix(nrow = iterations, ncol = numks)
+masterSpec = matrix(nrow = iterations, ncol = numks)
+
+# Convert categorical predictors to factors
+categorical_vars = c(
+  "BusinessTravel", "Department", "Education",
+  "EducationField", "EnvironmentSatisfaction", "Gender",
+  "JobInvolvement", "JobLevel", "JobRole",
+  "JobSatisfaction", "MaritalStatus", "OverTime",
+  "PerformanceRating", "RelationshipSatisfaction",
+  "StockOptionLevel", "WorkLifeBalance"
+)
+
+categorical_vars = intersect(categorical_vars, names(model_data))
+
+for (v in categorical_vars) {
+  print(table(model_data[[v]], useNA = "ifany"))
+}
+
+for (v in categorical_vars) {
+  model_data[[v]] = factor(model_data[[v]])
+}
+
+for (j in 1:iterations) {
+  
+  trainIndices = sample(1:nrow(model_data), round(splitPerc * nrow(model_data)))
+  
+  train = model_data[trainIndices, ]
+  test = model_data[-trainIndices, ]
+  
+  train_y = train$Attrition
+  test_y = test$Attrition
+  
+  predictor_names = setdiff(names(train), "Attrition")
+  
+  # dummy encode categorical variables using training data
+  dummy_model = dummyVars(
+    ~ .,
+    data = train[, predictor_names, drop = FALSE],
+    fullRank = TRUE
+  )
+  
+  train_x = predict(
+    dummy_model,
+    newdata = train[, predictor_names, drop = FALSE]
+  )
+  
+  test_x = predict(
+    dummy_model,
+    newdata = test[, predictor_names, drop = FALSE]
+  )
+  
+  # remove near-zero-variance predictors
+  nzv = nearZeroVar(train_x)
+  
+  if (length(nzv) > 0) {
+    train_x = train_x[, -nzv, drop = FALSE]
+    test_x = test_x[, -nzv, drop = FALSE]
+  }
+  
+  # ccale using training means and std deviations
+  train_means = colMeans(train_x)
+  train_sds = apply(train_x, 2, sd)
+  
+  # remove columns with zero or invalid standard deviation
+  valid_cols = is.finite(train_sds) & train_sds > 0
+  
+  train_x = train_x[, valid_cols, drop = FALSE]
+  test_x = test_x[, valid_cols, drop = FALSE]
+  
+  train_means = train_means[valid_cols]
+  train_sds = train_sds[valid_cols]
+  
+  train_x = scale(
+    train_x,
+    center = train_means,
+    scale = train_sds
+  )
+  
+  test_x = scale(
+    test_x,
+    center = train_means,
+    scale = train_sds
+  )
+  
+  # test each value of k
+  for (i in 1:numks) {
+    
+    classifications = knn(
+      train = train_x,
+      test = test_x,
+      cl = train_y,
+      prob = TRUE,
+      k = i
+    )
+    
+    CM = confusionMatrix(
+      data = factor(classifications, levels = c("No", "Yes")),
+      reference = factor(test_y, levels = c("No", "Yes")),
+      positive = "Yes"
+    )
+    
+    masterAcc[j, i] = CM$overall["Accuracy"]
+    masterSens[j, i] = CM$byClass["Sensitivity"]
+    masterSpec[j, i] = CM$byClass["Specificity"]
+  }
+}
+
+MeanAcc = colMeans(masterAcc, na.rm = TRUE)
+MeanSens = colMeans(masterSens, na.rm = TRUE)
+MeanSpec = colMeans(masterSpec, na.rm = TRUE)
+
+# plot(
+#  seq(1, numks, 1),
+#  MeanAcc,
+#  type = "l",
+#  xlab = "k",
+#  ylab = "Mean Accuracy",
+#  main = "KNN Accuracy vs. k"
+# ghvn)
+
+plot(
+  1:numks,
+  MeanSens,
+  type = "l",
+  xlab = "k",
+  ylab = "Mean Sensitivity",
+  main = "KNN Sensitivity vs. k"
+)
+
+# Best k based on mean accuracy
+# best_k = which.max(MeanAcc)
+# MeanAcc[best_k]
+
+best_k_sens = which.max(MeanSens)
+best_k_sens
+MeanSens[best_k_sens]
+```
+
+```{r}
+# knn model
+
+train_y = train_data$Attrition
+test_y = test_data$Attrition
+
+predictor_names = setdiff(names(train_data), "Attrition")
+
+
+# dummy encode categorical variables
+dummy_model = dummyVars(~ .,data = train_data[, predictor_names, drop = FALSE], fullRank = TRUE)
+
+train_x = predict(dummy_model, newdata = train_data[, predictor_names, drop = FALSE])
+
+test_x = predict(dummy_model, newdata = test_data[, predictor_names, drop = FALSE])
+
+# remove near-zero-variance predictors
+nzv = nearZeroVar(train_x)
+
+if (length(nzv) > 0) {
+  train_x = train_x[, -nzv, drop = FALSE]
+  test_x = test_x[, -nzv, drop = FALSE]
+}
+
+# scale using training data only
+
+train_sds = apply(train_x, 2, sd)
+valid_cols = is.finite(train_sds) & train_sds > 0
+
+train_x = train_x[, valid_cols, drop = FALSE]
+test_x = test_x[, valid_cols, drop = FALSE]
+
+train_means = colMeans(train_x)
+train_sds = apply(train_x, 2, sd)
+
+train_x = scale(train_x, center = train_means, scale = train_sds)
+test_x = scale(test_x, center = train_means, scale = train_sds)
+
+# fit knn
+classifications = knn(train = train_x, test = test_x, cl = train_y, prob = TRUE, k = 3)
+
+# evaluate model
+knn_prob_yes = ifelse(classifications == "Yes", winning_vote, 1 - winning_vote)
+
+threshold = 0.20
+
+knn_predictions = factor(ifelse(knn_prob_yes >= threshold, "Yes", "No"), levels = c("No", "Yes"))
+
+CM_knn = confusionMatrix(
+  data = knn_predictions,
+  reference = test_y,
+  positive = "Yes")
+
+CM_knn
+
+```
+
+```{r}
+# naive bayes model
+
+nb_train = train_data
+nb_test = test_data
+
+nb_model = naiveBayes(Attrition ~ ., data = nb_train)
+
+# predict
+nb_predictions = predict(nb_model, newdata = nb_test, type = "raw")
+
+# evaluate 
+nb_prob_yes = nb_predictions[, "Yes"]
+
+threshold = 0.20
+
+nb_predictions = factor(ifelse(nb_prob_yes >= threshold, "Yes", "No"), levels = c("No", "Yes"))
+
+# confusion matrix
+CM_nb = confusionMatrix(
+  data = nb_predictions,
+  reference = nb_test$Attrition,
+  positive = "Yes")
+
+CM_nb
+```
